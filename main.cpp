@@ -94,7 +94,9 @@ static int process_callback(jack_nframes_t frames, void* arg)
     // try lock asap, not fatal yet
     bool locked = pthread_mutex_trylock(&jackdata->mutex) != 0;
 
+    // stack data
     jack_midi_data_t mididata[3];
+    unsigned char tmpbuf[kBufSize];
 
     // get jack midi port buffer
     void* const midibuf = jack_port_get_buffer(jackdata->midiport, frames);
@@ -111,7 +113,6 @@ static int process_callback(jack_nframes_t frames, void* arg)
     }
 
     // copy buf data into a temp location so we can release the lock
-    unsigned char tmpbuf[kBufSize];
     std::memcpy(tmpbuf, jackdata->buf, kBufSize);
     pthread_mutex_unlock(&jackdata->mutex);
 
@@ -128,6 +129,7 @@ static int process_callback(jack_nframes_t frames, void* arg)
             jack_midi_event_write(midibuf, 0, mididata, 3);
         }
 
+        // save current button state
         jackdata->oldbuf[k_Buttons1] = tmpbuf[k_Buttons1];
         jackdata->oldbuf[k_Buttons2] = tmpbuf[k_Buttons2];
     }
