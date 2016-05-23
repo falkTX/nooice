@@ -243,6 +243,8 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    const char* const hidrawNum = argv[1]+(strlen(argv[1])-1);
+
     if ((nr = read(fd, buf, kBufSize)) < 0)
     {
         fprintf(stderr, "noice::read(fd) - failed to read from device\n");
@@ -257,7 +259,11 @@ int main(int argc, char **argv)
         goto closefile;
     }
 
-    jackdata.client = jack_client_open("noice", JackNoStartServer, nullptr);
+    char tmpName[32];
+    std::strcpy(tmpName, "noice");
+    std::strcat(tmpName, hidrawNum);
+
+    jackdata.client = jack_client_open(tmpName, JackNoStartServer, nullptr);
 
     if (jackdata.client == nullptr)
     {
@@ -265,7 +271,11 @@ int main(int argc, char **argv)
         goto closefile;
     }
 
-    jackdata.midiport = jack_port_register(jackdata.client, "midi-capture", JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput|JackPortIsPhysical|JackPortIsTerminal, 0);
+    // name might not be unique
+    std::strcpy(tmpName, "noice_capture_");
+    std::strcat(tmpName, hidrawNum);
+
+    jackdata.midiport = jack_port_register(jackdata.client, tmpName, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput|JackPortIsPhysical|JackPortIsTerminal, 0);
 
     if (jackdata.midiport == nullptr)
     {
