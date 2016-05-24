@@ -18,13 +18,18 @@ noice.so: main.cpp
 	$(CXX) $< $(CXXFLAGS) $(LDFLAGS) -fPIC -shared -Wl,--no-undefined -o $@
 
 install: build
-	install -d $(DESTDIR)/etc/udev/rules.d/
 	install -d $(DESTDIR)/usr/bin
 	install -d $(DESTDIR)$(shell pkg-config --variable=libdir jack)/jack/
 
-	install -m 644 99-noice.rules /etc/udev/rules.d/
 	install -m 755 noice $(DESTDIR)/usr/bin/
 	install -m 755 noice.so $(DESTDIR)$(shell pkg-config --variable=libdir jack)/jack/
+
+install-udev: build
+	install -d $(DESTDIR)/etc/udev/rules.d
+	install -d $(DESTDIR)/usr/sbin
+
+	install -m 644 99-noice.rules /etc/udev/rules.d/
+	install -m 755 noice-udev-register.sh /usr/sbin/
 
 clean:
 	rm -f noice noice.so
