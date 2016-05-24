@@ -256,10 +256,10 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
 
 static bool noice_init(JackData* const jackdata, const char* const hidrawDevice)
 {
-    int fd, nr;
+    int nr;
     unsigned char buf[JackData::kBufSize];
 
-    if ((fd = open(hidrawDevice, O_RDONLY)) < 0)
+    if ((jackdata->fd = open(hidrawDevice, O_RDONLY)) < 0)
     {
         fprintf(stderr, "noice::open(hidrawX) - failed to open hidraw device\n");
         return 1;
@@ -267,7 +267,7 @@ static bool noice_init(JackData* const jackdata, const char* const hidrawDevice)
 
     const char* const hidrawNum = hidrawDevice+(strlen(hidrawDevice)-1);
 
-    if ((nr = read(fd, buf, JackData::kBufSize)) < 0)
+    if ((nr = read(jackdata->fd, buf, JackData::kBufSize)) < 0)
     {
         fprintf(stderr, "noice::read(fd) - failed to read from device\n");
         return false;
@@ -323,9 +323,10 @@ static bool noice_idle(JackData* const jackdata, unsigned char buf[JackData::kBu
     if (jackdata->client == nullptr)
         return false;
 
-    if (read(jackdata->fd, buf, JackData::kBufSize) != 64)
+    const int nr = read(jackdata->fd, buf, JackData::kBufSize);
+    if (nr != 64)
     {
-        fprintf(stderr, "noice::read(fd, buf) - failed to read from device\n");
+        fprintf(stderr, "noice::read(fd, buf) - failed to read from device (nr: %d)\n", nr);
         return false;
     }
 
