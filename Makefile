@@ -9,10 +9,13 @@ LDFLAGS  += -lpthread
 
 all: build
 
-build: noice
+build: noice noice.so
 
 noice: main.cpp
 	$(CXX) $< $(CXXFLAGS) $(LDFLAGS) -o $@
+
+noice.so: main.cpp
+	$(CXX) $< $(CXXFLAGS) $(LDFLAGS) -fPIC -shared -Wl,--no-undefined -o $@
 
 install: build
 	install -d $(DESTDIR)/usr/bin

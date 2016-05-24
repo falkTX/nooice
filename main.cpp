@@ -24,8 +24,7 @@
 #include <jack/jack.h>
 #include <jack/midiport.h>
 
-static bool gRunning;
-static const size_t kBufSize = 128;
+static volatile bool gRunning;
 
 static void signalHandler(int)
 {
@@ -70,11 +69,38 @@ enum A {
 };
 
 struct JackData {
+    static const size_t kBufSize = 128;
+
+    int fd;
     pthread_mutex_t mutex;
     jack_client_t* client;
     jack_port_t* midiport;
     unsigned char buf[kBufSize];
     unsigned char oldbuf[kBufSize];
+
+    JackData() noexcept
+        : fd(-1),
+          client(nullptr),
+          midiport(nullptr)
+    {
+        pthread_mutex_init(&mutex, nullptr);
+        std::memset(buf, 0, kBufSize);
+        std::memset(oldbuf, 0, kBufSize);
+    }
+
+    ~JackData()
+    {
+        if (client != nullptr)
+        {
+            jack_deactivate(client);
+            jack_client_close(client);
+        }
+
+        if (fd >= 0)
+            close(fd);
+
+        pthread_mutex_destroy(&mutex);
+    }
 };
 
 static const A kListA_[] = {
@@ -82,12 +108,15 @@ static const A kListA_[] = {
     k_L2, k_R2,
 };
 
-static void shutdown_callback(void*)
+static void shutdown_callback(void* const arg)
 {
-    gRunning = false;
+    JackData* const jackdata = (JackData*)arg;
+
+    jackdata->client = nullptr;
+    jackdata->midiport = nullptr;
 }
 
-static int process_callback(jack_nframes_t frames, void* arg)
+static int process_callback(const jack_nframes_t frames, void* const arg)
 {
     JackData* const jackdata = (JackData*)arg;
 
@@ -96,7 +125,7 @@ static int process_callback(jack_nframes_t frames, void* arg)
 
     // stack data
     jack_midi_data_t mididata[3];
-    unsigned char tmpbuf[kBufSize];
+    unsigned char tmpbuf[JackData::kBufSize];
 
     // get jack midi port buffer
     void* const midibuf = jack_port_get_buffer(jackdata->midiport, frames);
@@ -113,7 +142,7 @@ static int process_callback(jack_nframes_t frames, void* arg)
     }
 
     // copy buf data into a temp location so we can release the lock
-    std::memcpy(tmpbuf, jackdata->buf, kBufSize);
+    std::memcpy(tmpbuf, jackdata->buf, JackData::kBufSize);
     pthread_mutex_unlock(&jackdata->mutex);
 
     // first time, send everything
@@ -221,34 +250,27 @@ static int process_callback(jack_nframes_t frames, void* arg)
     }
 
     // cache current buf for comparison on next call
-    std::memcpy(jackdata->oldbuf, tmpbuf, kBufSize);
+    std::memcpy(jackdata->oldbuf, tmpbuf, JackData::kBufSize);
     return 0;
 }
 
-int main(int argc, char **argv)
+static bool noice_init(JackData* const jackdata, const char* const hidrawDevice)
 {
     int fd, nr;
-    unsigned char buf[kBufSize];
-    JackData jackdata;
+    unsigned char buf[JackData::kBufSize];
 
-    if (argc < 2)
-    {
-        printf("Usage: %s /dev/hidrawX\n", argv[0]);
-        return 1;
-    }
-
-    if ((fd = open(argv[1], O_RDONLY)) < 0)
+    if ((fd = open(hidrawDevice, O_RDONLY)) < 0)
     {
         fprintf(stderr, "noice::open(hidrawX) - failed to open hidraw device\n");
         return 1;
     }
 
-    const char* const hidrawNum = argv[1]+(strlen(argv[1])-1);
+    const char* const hidrawNum = hidrawDevice+(strlen(hidrawDevice)-1);
 
-    if ((nr = read(fd, buf, kBufSize)) < 0)
+    if ((nr = read(fd, buf, JackData::kBufSize)) < 0)
     {
         fprintf(stderr, "noice::read(fd) - failed to read from device\n");
-        goto closefile;
+        return false;
     }
 
     printf("noice::read(fd) - nr = %d\n", nr);
@@ -256,66 +278,60 @@ int main(int argc, char **argv)
     if (nr != 64)
     {
         fprintf(stderr, "noice::read(fd) - not a sixaxis (nr = %d)\n", nr);
-        goto closefile;
+        return false;
     }
 
     char tmpName[32];
     std::strcpy(tmpName, "noice");
     std::strcat(tmpName, hidrawNum);
 
-    jackdata.client = jack_client_open(tmpName, JackNoStartServer, nullptr);
-
-    if (jackdata.client == nullptr)
+    if (jackdata->client == nullptr)
     {
-        fprintf(stderr, "noice:: failed to register jack client\n");
-        goto closefile;
+        jackdata->client = jack_client_open(tmpName, JackNoStartServer, nullptr);
+
+        if (jackdata->client == nullptr)
+        {
+            fprintf(stderr, "noice:: failed to register jack client\n");
+            return false;
+        }
     }
 
-    // name might not be unique
     std::strcpy(tmpName, "noice_capture_");
     std::strcat(tmpName, hidrawNum);
 
-    jackdata.midiport = jack_port_register(jackdata.client, tmpName, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput|JackPortIsPhysical|JackPortIsTerminal, 0);
+    jackdata->midiport = jack_port_register(jackdata->client, tmpName, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput|JackPortIsPhysical|JackPortIsTerminal, 0);
 
-    if (jackdata.midiport == nullptr)
+    if (jackdata->midiport == nullptr)
     {
         fprintf(stderr, "noice:: failed to register jack midi port\n");
-        goto closejack;
+        return false;
     }
 
-    jack_port_set_alias(jackdata.midiport, "PS4 DualShock");
+    jack_port_set_alias(jackdata->midiport, "PS4 DualShock");
 
-    gRunning = true;
+    std::memcpy(jackdata->buf, buf, JackData::kBufSize);
 
-    struct sigaction sig;
-    sig.sa_handler  = signalHandler;
-    sig.sa_flags    = SA_RESTART;
-    sig.sa_restorer = nullptr;
-    sigemptyset(&sig.sa_mask);
-    sigaction(SIGINT,  &sig, nullptr);
-    sigaction(SIGTERM, &sig, nullptr);
+    jack_on_shutdown(jackdata->client, shutdown_callback, jackdata);
+    jack_set_process_callback(jackdata->client, process_callback, jackdata);
+    jack_activate(jackdata->client);
 
-    pthread_mutex_init(&jackdata.mutex, nullptr);
-    std::memcpy(jackdata.buf, buf, kBufSize);
-    std::memset(jackdata.oldbuf, 0, kBufSize);
+    return true;
+}
 
-    jack_on_shutdown(jackdata.client, shutdown_callback, nullptr);
-    jack_set_process_callback(jackdata.client, process_callback, &jackdata);
-    jack_activate(jackdata.client);
+static bool noice_idle(JackData* const jackdata, unsigned char buf[JackData::kBufSize])
+{
+    if (jackdata->client == nullptr)
+        return false;
 
-    while (gRunning)
+    if (read(jackdata->fd, buf, JackData::kBufSize) != 64)
     {
-        nr = read(fd, buf, kBufSize);
+        fprintf(stderr, "noice::read(fd, buf) - failed to read from device\n");
+        return false;
+    }
 
-        if (nr != 64)
-        {
-            fprintf(stderr, "noice::read(fd, buf) - failed to read from device\n");
-            break;
-        }
-
-        pthread_mutex_lock(&jackdata.mutex);
-        std::memcpy(jackdata.buf, buf, kBufSize);
-        pthread_mutex_unlock(&jackdata.mutex);
+    pthread_mutex_lock(&jackdata->mutex);
+    std::memcpy(jackdata->buf, buf, JackData::kBufSize);
+    pthread_mutex_unlock(&jackdata->mutex);
 
 #if 1
         //printf("%03X %03X\n", buf[8], buf[9]);
@@ -329,15 +345,85 @@ int main(int argc, char **argv)
                 printf("\n");
         }
 #endif
+
+    return true;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc < 2)
+    {
+        printf("Usage: %s /dev/hidrawX\n", argv[0]);
+        return 1;
     }
 
-    jack_deactivate(jackdata.client);
-    pthread_mutex_destroy(&jackdata.mutex);
+    JackData jackdata;
 
-closejack:
-    jack_client_close(jackdata.client);
+    if (! noice_init(&jackdata, argv[1]))
+        return 1;
 
-closefile:
-    close(fd);
+    gRunning = true;
+
+    struct sigaction sig;
+    sig.sa_handler  = signalHandler;
+    sig.sa_flags    = SA_RESTART;
+    sig.sa_restorer = nullptr;
+    sigemptyset(&sig.sa_mask);
+    sigaction(SIGINT,  &sig, nullptr);
+    sigaction(SIGTERM, &sig, nullptr);
+
+    unsigned char buf[JackData::kBufSize];
+    while (gRunning && noice_idle(&jackdata, buf)) {}
+
     return 0;
+}
+
+static pthread_t gInternalClientThread = 0;
+
+static void* gInternalClientRun(void* arg)
+{
+    JackData* const jackdata = (JackData*)arg;
+
+    gRunning = true;
+
+    unsigned char buf[JackData::kBufSize];
+    while (gRunning && noice_idle(jackdata, buf)) {}
+
+    jackdata->client = nullptr;
+    jackdata->midiport = nullptr;
+    delete jackdata;
+    return nullptr;
+}
+
+extern "C" __attribute__ ((visibility("default")))
+int jack_initialize(jack_client_t* client, const char* load_init);
+
+int jack_initialize(jack_client_t* client, const char* load_init)
+{
+    if (gInternalClientThread != 0)
+    {
+        fprintf(stderr, "noice: can only load 1 device at a time (internal client restrictions)\n");
+        return 1;
+    }
+
+    JackData* const jackdata = new JackData();
+
+    if (! noice_init(jackdata, load_init))
+        return 1;
+
+    pthread_create(&gInternalClientThread, NULL, gInternalClientRun, jackdata);
+
+    return 0;
+}
+
+extern "C" __attribute__ ((visibility("default")))
+void jack_finish(void);
+
+void jack_finish(void)
+{
+    gRunning = false;
+
+    pthread_t tmp = gInternalClientThread;
+    gInternalClientThread = 0;
+    pthread_join(tmp, nullptr);
 }
