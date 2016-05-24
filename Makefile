@@ -20,6 +20,8 @@ noice.so: main.cpp
 install: build
 	install -d $(DESTDIR)/usr/bin
 	install -m 755 noice $(DESTDIR)/usr/bin/
+	install -d $(DESTDIR)$(shell pkg-config --variable=libdir jack)/jack/
+	install -m 755 noice.so $(DESTDIR)$(shell pkg-config --variable=libdir jack)/jack/
 
 clean:
-	rm -f noice
+	rm -f noice noice.so
