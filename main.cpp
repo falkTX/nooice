@@ -24,12 +24,7 @@
 #include <jack/jack.h>
 #include <jack/midiport.h>
 
-static volatile bool gRunning;
-
-static void signalHandler(int)
-{
-    gRunning = false;
-}
+// --------------------------------------------------------------------------------------------------------------------
 
 // 5
 enum ButtonMasks1 {
@@ -68,10 +63,13 @@ enum A {
     k_R2 = 9,
 };
 
+// --------------------------------------------------------------------------------------------------------------------
+
 struct JackData {
     static const size_t kBufSize = 128;
 
     int fd;
+    pthread_t thread;
     pthread_mutex_t mutex;
     jack_client_t* client;
     jack_port_t* midiport;
@@ -80,6 +78,7 @@ struct JackData {
 
     JackData() noexcept
         : fd(-1),
+          thread(0),
           client(nullptr),
           midiport(nullptr)
     {
@@ -107,6 +106,8 @@ static const A kListA_[] = {
     k_LX, k_LY, k_RX, k_RY,
     k_L2, k_R2,
 };
+
+// --------------------------------------------------------------------------------------------------------------------
 
 static void shutdown_callback(void* const arg)
 {
@@ -254,8 +255,13 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
     return 0;
 }
 
+// --------------------------------------------------------------------------------------------------------------------
+
 static bool noice_init(JackData* const jackdata, const char* const hidrawDevice)
 {
+    if (hidrawDevice == nullptr || hidrawDevice[0] == '\0')
+        return false;
+
     int nr;
     unsigned char buf[JackData::kBufSize];
 
@@ -350,6 +356,15 @@ static bool noice_idle(JackData* const jackdata, unsigned char buf[JackData::kBu
     return true;
 }
 
+// --------------------------------------------------------------------------------------------------------------------
+
+static volatile bool gRunning;
+
+static void signalHandler(int)
+{
+    gRunning = false;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2)
@@ -379,20 +394,15 @@ int main(int argc, char **argv)
     return 0;
 }
 
-static pthread_t gInternalClientThread = 0;
+// --------------------------------------------------------------------------------------------------------------------
 
 static void* gInternalClientRun(void* arg)
 {
     JackData* const jackdata = (JackData*)arg;
 
-    gRunning = true;
-
     unsigned char buf[JackData::kBufSize];
-    while (gRunning && noice_idle(jackdata, buf)) {}
+    while (noice_idle(jackdata, buf)) {}
 
-    jackdata->client = nullptr;
-    jackdata->midiport = nullptr;
-    delete jackdata;
     return nullptr;
 }
 
@@ -401,30 +411,30 @@ int jack_initialize(jack_client_t* client, const char* load_init);
 
 int jack_initialize(jack_client_t* client, const char* load_init)
 {
-    if (gInternalClientThread != 0)
-    {
-        fprintf(stderr, "noice: can only load 1 device at a time (internal client restrictions)\n");
-        return 1;
-    }
-
     JackData* const jackdata = new JackData();
 
+    jackdata->client = client;
     if (! noice_init(jackdata, load_init))
         return 1;
 
-    pthread_create(&gInternalClientThread, NULL, gInternalClientRun, jackdata);
-
+    pthread_create(&jackdata->thread, NULL, gInternalClientRun, jackdata);
     return 0;
 }
 
 extern "C" __attribute__ ((visibility("default")))
-void jack_finish(void);
+void jack_finish(void* arg);
 
-void jack_finish(void)
+void jack_finish(void* arg)
 {
-    gRunning = false;
+    if (arg == nullptr)
+        return;
 
-    pthread_t tmp = gInternalClientThread;
-    gInternalClientThread = 0;
-    pthread_join(tmp, nullptr);
+    JackData* const jackdata = (JackData*)arg;
+
+    jackdata->client = nullptr;
+    pthread_join(jackdata->thread, nullptr);
+
+    delete jackdata;
 }
+
+// --------------------------------------------------------------------------------------------------------------------
