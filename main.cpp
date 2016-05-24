@@ -268,7 +268,7 @@ static bool noice_init(JackData* const jackdata, const char* const hidrawDevice)
     if ((jackdata->fd = open(hidrawDevice, O_RDONLY)) < 0)
     {
         fprintf(stderr, "noice::open(hidrawX) - failed to open hidraw device\n");
-        return 1;
+        return false;
     }
 
     const char* const hidrawNum = hidrawDevice+(strlen(hidrawDevice)-1);
@@ -333,6 +333,20 @@ static bool noice_idle(JackData* const jackdata, unsigned char buf[JackData::kBu
     if (nr != 64)
     {
         fprintf(stderr, "noice::read(fd, buf) - failed to read from device (nr: %d)\n", nr);
+        jack_deactivate(jackdata->client);
+#if 0
+        if (jackdata->thread != 0)
+        {
+            if (const char* const clientname = jack_get_client_name(jackdata->client))
+            {
+                if (vfork() == 0)
+                {
+                    execl("/usr/bin/jack_unload", clientname, nullptr);
+                    _exit(1);
+                }
+            }
+        }
+#endif
         return false;
     }
 
