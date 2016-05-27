@@ -31,7 +31,7 @@ enum Bytes {
     kBytesR2 = 9,
 };
 
-// kBytesButtons1 (0x00-0x10)
+// kBytesButtons1 (0x00-0x0F)
 enum ArrowButtons {
     kButtonUp,
     kButtonRightUp,
@@ -40,7 +40,7 @@ enum ArrowButtons {
     kButtonDown,
     kButtonLeftDown,
     kButtonLeft,
-    kButtonRightLeft,
+    kButtonLeftUp,
     kButtonNone
 };
 
@@ -72,6 +72,8 @@ static const Bytes kListCCs[] = {
     kBytesL2,
     kBytesR2,
 };
+
+static const int ArrowValueToMask[] = {1, 3, 2, 6, 4, 12, 8, 9, 0};
 
 static inline
 void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf[JackData::kBufSize])
@@ -115,34 +117,13 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
         // send notes
         unsigned char newbyte, oldbyte;
 
+        int arrow_idx = tmpbuf[kBytesButtons1] & 0x0F;
+        tmpbuf[kBytesButtons1] = (tmpbuf[kBytesButtons1] & 0xF0) | ArrowValueToMask[arrow_idx];
+
         if (tmpbuf[kBytesButtons1] != jackdata->oldbuf[kBytesButtons1])
         {
-            // arrow buttons, need special handling
-            newbyte = tmpbuf[kBytesButtons1] & 0x0F;
-            oldbyte = jackdata->oldbuf[kBytesButtons1] & 0x0F;
-
-            if (newbyte != oldbyte)
-            {
-                // note on
-                if (newbyte != kButtonNone)
-                {
-                    mididata[0] = 0x90;
-                    mididata[1] = 80 + (newbyte+1)*2;
-                    mididata[2] = 100;
-                    jack_midi_event_write(midibuf, 0, mididata, 3);
-                }
-                // note off
-                else
-                {
-                    mididata[0] = 0x80;
-                    mididata[1] = 80 + (oldbyte+1)*2;
-                    mididata[2] = 100;
-                    jack_midi_event_write(midibuf, 0, mididata, 3);
-                }
-            }
-
             // 8 byte masks, ignore first 4
-            for (int i=4; i<8; ++i)
+            for (int i=0; i<8; ++i)
             {
                 newbyte = tmpbuf[kBytesButtons1] & (1<<i);
                 oldbyte = jackdata->oldbuf[kBytesButtons1] & (1<<i);
