@@ -216,7 +216,20 @@ static bool noice_init(JackData* const jackdata, const char* const device)
         return false;
     }
 
-    jack_port_set_alias(jackdata->midiport, "PS4 DualShock");
+    switch (jackdata->device)
+    {
+    case JackData::kNull:
+        break;
+    case JackData::kDualShock3:
+        jack_port_set_alias(jackdata->midiport, "PS3 DualShock");
+        break;
+    case JackData::kDualShock4:
+        jack_port_set_alias(jackdata->midiport, "PS4 DualShock");
+        break;
+    case JackData::kGuitarHero:
+        jack_port_set_alias(jackdata->midiport, "Guitar Hero");
+        break;
+    }
 
     std::memcpy(jackdata->buf, buf, jackdata->nr);
 
