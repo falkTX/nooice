@@ -304,7 +304,7 @@ static bool noice_idle(JackData* const jackdata, unsigned char buf[JackData::kBu
     std::memcpy(jackdata->buf, buf, jackdata->nr);
     pthread_mutex_unlock(&jackdata->mutex);
 
-#if 1
+#if 0
         printf("\n==========================================\n");
         for (int j=0; j<jackdata->nr; j++)
         {
