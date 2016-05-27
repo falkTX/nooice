@@ -23,6 +23,7 @@
 
 // --------------------------------------------------------------------------------------------------------------------
 
+#include "devices/guitarhero.hpp"
 #include "devices/ps3.hpp"
 #include "devices/ps4.hpp"
 
@@ -79,7 +80,6 @@ static void shutdown_callback(void* const arg)
     JackData* const jackdata = (JackData*)arg;
 
     jackdata->client = nullptr;
-    jackdata->midiport = nullptr;
 }
 
 static int process_callback(const jack_nframes_t frames, void* const arg)
@@ -121,6 +121,7 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
         PS4::process(jackdata, midibuf, tmpbuf);
         break;
     case JackData::kGuitarHero:
+        GuitarHero::process(jackdata, midibuf, tmpbuf);
         break;
     }
 
@@ -291,8 +292,6 @@ static bool noice_idle(JackData* const jackdata, unsigned char buf[JackData::kBu
     pthread_mutex_unlock(&jackdata->mutex);
 
 #if 1
-        //printf("%03X %03X\n", buf[8], buf[9]);
-#else
         printf("\n==========================================\n");
         for (int j=0; j<jackdata->nr; j++)
         {
@@ -369,7 +368,7 @@ int jack_initialize(jack_client_t* client, const char* load_init)
     if (! noice_init(jackdata, load_init))
         return 1;
 
-    pthread_create(&jackdata->thread, NULL, gInternalClientRun, jackdata);
+    pthread_create(&jackdata->thread, nullptr, gInternalClientRun, jackdata);
     return 0;
 }
 

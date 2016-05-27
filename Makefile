@@ -13,10 +13,10 @@ all: build
 
 build: noice noice.so
 
-noice: main.cpp
+noice: main.cpp devices/*.hpp
 	$(CXX) $< $(CXXFLAGS) $(LDFLAGS) -o $@
 
-noice.so: main.cpp
+noice.so: main.cpp devices/*.hpp
 	$(CXX) $< $(CXXFLAGS) $(LDFLAGS) -fPIC -shared -Wl,--no-undefined -o $@
 
 install: build
