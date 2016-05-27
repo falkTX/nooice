@@ -64,7 +64,7 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
     if (jackdata->oldbuf[kBytesReservedInitiated] == 0)
     {
         jackdata->oldbuf[kBytesReservedInitiated]  = 1;
-        jackdata->oldbuf[kBytesReservedCurRoot]    = 5;
+        jackdata->oldbuf[kBytesReservedCurRoot]    = 60;
         jackdata->oldbuf[kBytesReservedNoteGreen]  = 255;
         jackdata->oldbuf[kBytesReservedNoteRed]    = 255;
         jackdata->oldbuf[kBytesReservedNoteBlue]   = 255;
