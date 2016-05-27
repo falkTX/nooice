@@ -63,12 +63,34 @@ enum A {
     k_R2 = 9,
 };
 
+static const int kJoystickAnalogStart = 0;
+static const int kJoystickAnalogEnd   = 7;
+static const int kJoystickButtonStart = 8;
+static const int kJoystickButtonEnd   = 63;
+static const int kJoystickMaxAnalog   = kJoystickAnalogEnd-kJoystickAnalogStart;
+static const int kJoystickMaxButton   = kJoystickButtonEnd-kJoystickButtonStart;
+
 // --------------------------------------------------------------------------------------------------------------------
 
+struct js_event {
+    unsigned int time;      /* event timestamp in milliseconds */
+    short value;            /* value */
+    unsigned char type;     /* event type */
+    unsigned char number;   /* axis/button number */
+};
+
 struct JackData {
+    enum Device {
+        kNull,
+        kDualShock4,
+        kGuitarHero,
+    };
+
     static const size_t kBufSize = 128;
 
-    int fd;
+    bool joystick;
+    Device device;
+    int fd, nr;
     pthread_t thread;
     pthread_mutex_t mutex;
     jack_client_t* client;
@@ -77,7 +99,10 @@ struct JackData {
     unsigned char oldbuf[kBufSize];
 
     JackData() noexcept
-        : fd(-1),
+        : joystick(false),
+          device(kNull),
+          fd(-1),
+          nr(-1),
           thread(0),
           client(nullptr),
           midiport(nullptr)
@@ -122,7 +147,7 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
     JackData* const jackdata = (JackData*)arg;
 
     // try lock asap, not fatal yet
-    bool locked = pthread_mutex_trylock(&jackdata->mutex) != 0;
+    bool locked = pthread_mutex_trylock(&jackdata->mutex) == 0;
 
     // stack data
     jack_midi_data_t mididata[3];
@@ -135,7 +160,7 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
     // try lock again
     if (! locked)
     {
-        locked = pthread_mutex_trylock(&jackdata->mutex) != 0;
+        locked = pthread_mutex_trylock(&jackdata->mutex) == 0;
 
         // could not try-lock until here, stop
         if (! locked)
@@ -143,7 +168,7 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
     }
 
     // copy buf data into a temp location so we can release the lock
-    std::memcpy(tmpbuf, jackdata->buf, JackData::kBufSize);
+    std::memcpy(tmpbuf, jackdata->buf, jackdata->nr);
     pthread_mutex_unlock(&jackdata->mutex);
 
     // first time, send everything
@@ -251,45 +276,70 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
     }
 
     // cache current buf for comparison on next call
-    std::memcpy(jackdata->oldbuf, tmpbuf, JackData::kBufSize);
+    std::memcpy(jackdata->oldbuf, tmpbuf, jackdata->nr);
     return 0;
 }
 
 // --------------------------------------------------------------------------------------------------------------------
 
-static bool noice_init(JackData* const jackdata, const char* const hidrawDevice)
+static bool noice_init(JackData* const jackdata, const char* const device)
 {
-    if (hidrawDevice == nullptr || hidrawDevice[0] == '\0')
+    if (device == nullptr || device[0] == '\0')
         return false;
 
     int nr;
     unsigned char buf[JackData::kBufSize];
 
-    if ((jackdata->fd = open(hidrawDevice, O_RDONLY)) < 0)
+    jackdata->joystick = strncmp(device, "/dev/input/js", 13) == 0;
+
+    if ((jackdata->fd = open(device, O_RDONLY)) < 0)
     {
-        fprintf(stderr, "noice::open(hidrawX) - failed to open hidraw device\n");
+        fprintf(stderr, "noice::open(\"%s\") - failed to open hidraw device\n", device);
         return false;
     }
 
-    const char* const hidrawNum = hidrawDevice+(strlen(hidrawDevice)-1);
+    const char* const deviceNum = device+(strlen(device)-1);
 
-    if ((nr = read(jackdata->fd, buf, JackData::kBufSize)) < 0)
+    if ((nr = read(jackdata->fd, buf, jackdata->joystick ? sizeof(js_event) : JackData::kBufSize)) < 0)
     {
-        fprintf(stderr, "noice::read(fd) - failed to read from device\n");
+        fprintf(stderr, "noice::read(%i) - failed to read from device\n", jackdata->fd);
         return false;
     }
 
-    printf("noice::read(fd) - nr = %d\n", nr);
+    printf("noice::read(%i) - nr = %d\n", jackdata->fd, nr);
 
-    if (nr != 64)
+    if (jackdata->joystick)
     {
-        fprintf(stderr, "noice::read(fd) - not a sixaxis (nr = %d)\n", nr);
-        return false;
+        if (nr != sizeof(js_event))
+        {
+            fprintf(stderr, "noice::read(%i) - failed to read device (nr = %d)\n", jackdata->fd, nr);
+            return false;
+        }
+
+        memset(buf, 0, JackData::kBufSize);
+
+        // TODO - ask joystick to know what it is
+        jackdata->device = JackData::kGuitarHero;
+        jackdata->nr = 9;
+    }
+    else
+    {
+        switch (nr)
+        {
+        case 64:
+            jackdata->device = JackData::kDualShock4;
+            break;
+        default:
+            fprintf(stderr, "noice::read(%i) - unsuppported device (nr = %d)\n", jackdata->fd, nr);
+            return false;
+        }
+
+        jackdata->nr = nr;
     }
 
     char tmpName[32];
     std::strcpy(tmpName, "noice");
-    std::strcat(tmpName, hidrawNum);
+    std::strcat(tmpName, deviceNum);
 
     if (jackdata->client == nullptr)
     {
@@ -303,7 +353,7 @@ static bool noice_init(JackData* const jackdata, const char* const hidrawDevice)
     }
 
     std::strcpy(tmpName, "noice_capture_");
-    std::strcat(tmpName, hidrawNum);
+    std::strcat(tmpName, deviceNum);
 
     jackdata->midiport = jack_port_register(jackdata->client, tmpName, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput|JackPortIsPhysical|JackPortIsTerminal, 0);
 
@@ -315,7 +365,7 @@ static bool noice_init(JackData* const jackdata, const char* const hidrawDevice)
 
     jack_port_set_alias(jackdata->midiport, "PS4 DualShock");
 
-    std::memcpy(jackdata->buf, buf, JackData::kBufSize);
+    std::memcpy(jackdata->buf, buf, jackdata->nr);
 
     jack_on_shutdown(jackdata->client, shutdown_callback, jackdata);
     jack_set_process_callback(jackdata->client, process_callback, jackdata);
@@ -329,36 +379,70 @@ static bool noice_idle(JackData* const jackdata, unsigned char buf[JackData::kBu
     if (jackdata->client == nullptr)
         return false;
 
-    const int nr = read(jackdata->fd, buf, JackData::kBufSize);
-    if (nr != 64)
+    if (jackdata->joystick)
     {
-        fprintf(stderr, "noice::read(fd, buf) - failed to read from device (nr: %d)\n", nr);
-        jack_deactivate(jackdata->client);
-#if 0
-        if (jackdata->thread != 0)
+        js_event ev;
+        const int nr = read(jackdata->fd, &ev, sizeof(js_event));
+
+        if (nr != sizeof(js_event))
         {
-            if (const char* const clientname = jack_get_client_name(jackdata->client))
-            {
-                if (vfork() == 0)
-                {
-                    execl("/usr/bin/jack_unload", clientname, nullptr);
-                    _exit(1);
-                }
-            }
+            fprintf(stderr, "noice::read(%i, buf) - failed to read from device (nr: %d)\n", jackdata->nr, nr);
+            jack_deactivate(jackdata->client);
+            return false;
         }
-#endif
-        return false;
+
+        // ignore synthetic events
+        ev.type &= ~0x80;
+
+        // put data into buf to simulate a raw device
+        switch (ev.type)
+        {
+        case 1: { // button
+            if (ev.number > kJoystickMaxButton)
+                break;
+            if (jackdata->device == JackData::kGuitarHero && ev.number > 5)
+                --ev.number;
+
+            const int mask = 1 << ev.number;
+            const int offs = kJoystickButtonStart + (ev.number / 8);
+
+            if (ev.value)
+                buf[offs] |= mask;
+            else
+                buf[offs] &= ~mask;
+            break;
+        }
+        case 2: { // axis
+            if (ev.number > kJoystickMaxAnalog)
+                break;
+            const int offs = kJoystickAnalogStart + ev.number;
+
+            buf[offs] = (ev.value + 32767) / 256;
+            break;
+        }
+        }
+    }
+    else
+    {
+        const int nr = read(jackdata->fd, buf, jackdata->nr);
+
+        if (nr != jackdata->nr)
+        {
+            fprintf(stderr, "noice::read(%i, buf) - failed to read from device (nr: %d)\n", jackdata->nr, nr);
+            jack_deactivate(jackdata->client);
+            return false;
+        }
     }
 
     pthread_mutex_lock(&jackdata->mutex);
-    std::memcpy(jackdata->buf, buf, JackData::kBufSize);
+    std::memcpy(jackdata->buf, buf, jackdata->nr);
     pthread_mutex_unlock(&jackdata->mutex);
 
 #if 1
         //printf("%03X %03X\n", buf[8], buf[9]);
 #else
         printf("\n==========================================\n");
-        for (int j=0; j<64; j++)
+        for (int j=0; j<jackdata->nr; j++)
         {
             printf("%02X ", buf[j]);
 
@@ -383,7 +467,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("Usage: %s /dev/hidrawX\n", argv[0]);
+        printf("Usage: %s /dev/hidrawX|/dev/input/jsX\n", argv[0]);
         return 1;
     }
 
@@ -403,6 +487,7 @@ int main(int argc, char **argv)
     sigaction(SIGTERM, &sig, nullptr);
 
     unsigned char buf[JackData::kBufSize];
+    memset(buf, 0, JackData::kBufSize);
     while (gRunning && noice_idle(&jackdata, buf)) {}
 
     return 0;
@@ -415,6 +500,7 @@ static void* gInternalClientRun(void* arg)
     JackData* const jackdata = (JackData*)arg;
 
     unsigned char buf[JackData::kBufSize];
+    memset(buf, 0, JackData::kBufSize);
     while (noice_idle(jackdata, buf)) {}
 
     return nullptr;
