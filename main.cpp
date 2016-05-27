@@ -21,59 +21,11 @@
 #include <signal.h>
 #include <unistd.h>
 
-#include <jack/jack.h>
-#include <jack/midiport.h>
-
 // --------------------------------------------------------------------------------------------------------------------
 
-enum ArrowButtons {
-    kButtonUp,
-    kButtonRightUp,
-    kButtonRight,
-    kButtonRightDown,
-    kButtonDown,
-    kButtonLeftDown,
-    kButtonLeft,
-    kButtonRightLeft,
-    kButtonNone
-};
+#include "devices/ps4.hpp"
 
-// 5
-enum ButtonMasks1 {
-    /*
-    kButtonMaskLeft     = 0x01,
-    kButtonMaskDown     = 0x02,
-    kButtonMaskRight    = 0x04,
-    kButtonMaskUp       = 0x08,
-    */
-    kButtonMaskSquare   = 0x10,
-    kButtonMaskCross    = 0x20,
-    kButtonMaskCircle   = 0x40,
-    kButtonMaskTriangle = 0x80,
-};
-
-// 6
-enum ButtonMasks2 {
-    kButtonMaskL1      = 0x01,
-    kButtonMaskR1      = 0x02,
-    kButtonMaskL2      = 0x04,
-    kButtonMaskR2      = 0x08,
-    kButtonMaskShare   = 0x10,
-    kButtonMaskOptions = 0x20,
-    kButtonMaskL3      = 0x40,
-    kButtonMaskR3      = 0x80,
-};
-
-enum A {
-    k_LX = 1,
-    k_LY = 2,
-    k_RX = 3,
-    k_RY = 4,
-    k_Buttons1 = 5,
-    k_Buttons2 = 6,
-    k_L2 = 8,
-    k_R2 = 9,
-};
+// --------------------------------------------------------------------------------------------------------------------
 
 static const int kJoystickAnalogStart = 0;
 static const int kJoystickAnalogEnd   = 7;
@@ -91,58 +43,33 @@ struct js_event {
     unsigned char number;   /* axis/button number */
 };
 
-struct JackData {
-    enum Device {
-        kNull,
-        kDualShock4,
-        kGuitarHero,
-    };
+JackData::JackData() noexcept
+    : joystick(false),
+      device(kNull),
+      fd(-1),
+      nr(-1),
+      thread(0),
+      client(nullptr),
+      midiport(nullptr)
+{
+    pthread_mutex_init(&mutex, nullptr);
+    std::memset(buf, 0, kBufSize);
+    std::memset(oldbuf, 0, kBufSize);
+}
 
-    static const size_t kBufSize = 128;
-
-    bool joystick;
-    Device device;
-    int fd, nr;
-    pthread_t thread;
-    pthread_mutex_t mutex;
-    jack_client_t* client;
-    jack_port_t* midiport;
-    unsigned char buf[kBufSize];
-    unsigned char oldbuf[kBufSize];
-
-    JackData() noexcept
-        : joystick(false),
-          device(kNull),
-          fd(-1),
-          nr(-1),
-          thread(0),
-          client(nullptr),
-          midiport(nullptr)
+JackData::~JackData()
+{
+    if (client != nullptr)
     {
-        pthread_mutex_init(&mutex, nullptr);
-        std::memset(buf, 0, kBufSize);
-        std::memset(oldbuf, 0, kBufSize);
+        jack_deactivate(client);
+        jack_client_close(client);
     }
 
-    ~JackData()
-    {
-        if (client != nullptr)
-        {
-            jack_deactivate(client);
-            jack_client_close(client);
-        }
+    if (fd >= 0)
+        close(fd);
 
-        if (fd >= 0)
-            close(fd);
-
-        pthread_mutex_destroy(&mutex);
-    }
-};
-
-static const A kListA_[] = {
-    k_LX, k_LY, k_RX, k_RY,
-    k_L2, k_R2,
-};
+    pthread_mutex_destroy(&mutex);
+}
 
 // --------------------------------------------------------------------------------------------------------------------
 
@@ -162,7 +89,6 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
     bool locked = pthread_mutex_trylock(&jackdata->mutex) == 0;
 
     // stack data
-    jack_midi_data_t mididata[3];
     unsigned char tmpbuf[JackData::kBufSize];
 
     // get jack midi port buffer
@@ -183,132 +109,17 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
     std::memcpy(tmpbuf, jackdata->buf, jackdata->nr);
     pthread_mutex_unlock(&jackdata->mutex);
 
-    // first time, send everything
-    if (jackdata->oldbuf[0] == 0)
+    switch (jackdata->device)
     {
-        // send CCs
-        mididata[0] = 0xB0;
-        for (size_t i=0, k; i < sizeof(kListA_)/sizeof(A); ++i)
-        {
-            k = kListA_[i];
-            mididata[1] = i+1;
-            mididata[2] = jackdata->oldbuf[k] = tmpbuf[k]/2;
-            jack_midi_event_write(midibuf, 0, mididata, 3);
-        }
-
-        // save current button state
-        jackdata->oldbuf[k_Buttons1] = tmpbuf[k_Buttons1];
-        jackdata->oldbuf[k_Buttons2] = tmpbuf[k_Buttons2];
-    }
-    // send changes
-    else
-    {
-        // send CCs
-        mididata[0] = 0xB0;
-        for (size_t i=0, k; i < sizeof(kListA_)/sizeof(A); ++i)
-        {
-            k = kListA_[i];
-            tmpbuf[k] /= 2;
-            if (tmpbuf[k] == jackdata->oldbuf[k])
-                continue;
-
-            mididata[1] = i+1;
-            mididata[2] = jackdata->oldbuf[k] = tmpbuf[k];
-            jack_midi_event_write(midibuf, 0, mididata, 3);
-        }
-
-        // send notes
-        unsigned char newbyte, oldbyte;
-
-        if (tmpbuf[k_Buttons1] != jackdata->oldbuf[k_Buttons1])
-        {
-            // arrow buttons, need special handling
-            newbyte = tmpbuf[k_Buttons1] & 0x0F;
-            oldbyte = jackdata->oldbuf[k_Buttons1] & 0x0F;
-
-            if (newbyte != oldbyte)
-            {
-                // note on
-                if (newbyte != kButtonNone)
-                {
-                    mididata[0] = 0x90;
-                    mididata[1] = 80 + (newbyte+1)*2;
-                    mididata[2] = 100;
-                    jack_midi_event_write(midibuf, 0, mididata, 3);
-                }
-                // note off
-                else
-                {
-                    mididata[0] = 0x80;
-                    mididata[1] = 80 + (oldbyte+1)*2;
-                    mididata[2] = 100;
-                    jack_midi_event_write(midibuf, 0, mididata, 3);
-                }
-            }
-
-            // 8 byte masks, ignore first 4
-            for (int i=4; i<8; ++i)
-            {
-                newbyte = tmpbuf[k_Buttons1] & (1<<i);
-                oldbyte = jackdata->oldbuf[k_Buttons1] & (1<<i);
-
-                if (newbyte == oldbyte)
-                    continue;
-
-                // note
-                mididata[1] = 50 + (i+1)*2;
-
-                // note on
-                if (newbyte)
-                {
-                    mididata[0] = 0x90;
-                    mididata[2] = 100;
-                    jack_midi_event_write(midibuf, 0, mididata, 3);
-                }
-                // note off
-                else
-                {
-                    mididata[0] = 0x80;
-                    mididata[2] = 100;
-                    jack_midi_event_write(midibuf, 0, mididata, 3);
-                }
-            }
-
-            jackdata->oldbuf[k_Buttons1] = tmpbuf[k_Buttons1];
-        }
-
-        if (tmpbuf[k_Buttons2] != jackdata->oldbuf[k_Buttons2])
-        {
-            // 8 byte masks
-            for (int i=0; i<8; ++i)
-            {
-                newbyte = tmpbuf[k_Buttons2] & (1<<i);
-                oldbyte = jackdata->oldbuf[k_Buttons2] & (1<<i);
-
-                if (newbyte == oldbyte)
-                    continue;
-
-                // note
-                mididata[1] = 62 + (i+1)*2;
-
-                // note on
-                if (newbyte)
-                {
-                    mididata[0] = 0x90;
-                    mididata[2] = 100;
-                    jack_midi_event_write(midibuf, 0, mididata, 3);
-                }
-                // note off
-                else
-                {
-                    mididata[0] = 0x80;
-                    mididata[2] = 100;
-                    jack_midi_event_write(midibuf, 0, mididata, 3);
-                }
-            }
-
-            jackdata->oldbuf[k_Buttons2] = tmpbuf[k_Buttons2];
-        }
+    case JackData::kNull:
+        break;
+    case JackData::kDualShock3:
+        break;
+    case JackData::kDualShock4:
+        PS4::process(jackdata, midibuf, tmpbuf);
+        break;
+    case JackData::kGuitarHero:
+        break;
     }
 
     // cache current buf for comparison on next call
