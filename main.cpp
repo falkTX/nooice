@@ -26,6 +26,18 @@
 
 // --------------------------------------------------------------------------------------------------------------------
 
+enum ArrowButtons {
+    kButtonUp,
+    kButtonRightUp,
+    kButtonRight,
+    kButtonRightDown,
+    kButtonDown,
+    kButtonLeftDown,
+    kButtonLeft,
+    kButtonRightLeft,
+    kButtonNone
+};
+
 // 5
 enum ButtonMasks1 {
     /*
@@ -210,6 +222,30 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
 
         if (tmpbuf[k_Buttons1] != jackdata->oldbuf[k_Buttons1])
         {
+            // arrow buttons, need special handling
+            newbyte = tmpbuf[k_Buttons1] & 0x0F;
+            oldbyte = jackdata->oldbuf[k_Buttons1] & 0x0F;
+
+            if (newbyte != oldbyte)
+            {
+                // note on
+                if (newbyte != kButtonNone)
+                {
+                    mididata[0] = 0x90;
+                    mididata[1] = 80 + (newbyte+1)*2;
+                    mididata[2] = 100;
+                    jack_midi_event_write(midibuf, 0, mididata, 3);
+                }
+                // note off
+                else
+                {
+                    mididata[0] = 0x80;
+                    mididata[1] = 80 + (oldbyte+1)*2;
+                    mididata[2] = 100;
+                    jack_midi_event_write(midibuf, 0, mididata, 3);
+                }
+            }
+
             // 8 byte masks, ignore first 4
             for (int i=4; i<8; ++i)
             {
