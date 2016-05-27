@@ -23,6 +23,7 @@
 
 // --------------------------------------------------------------------------------------------------------------------
 
+#include "devices/ps3.hpp"
 #include "devices/ps4.hpp"
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -114,6 +115,7 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
     case JackData::kNull:
         break;
     case JackData::kDualShock3:
+        PS3::process(jackdata, midibuf, tmpbuf);
         break;
     case JackData::kDualShock4:
         PS4::process(jackdata, midibuf, tmpbuf);
@@ -173,6 +175,9 @@ static bool noice_init(JackData* const jackdata, const char* const device)
     {
         switch (nr)
         {
+        case 49:
+            jackdata->device = JackData::kDualShock3;
+            break;
         case 64:
             jackdata->device = JackData::kDualShock4;
             break;

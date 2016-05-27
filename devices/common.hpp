@@ -14,6 +14,9 @@
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#ifndef NOICE_COMMON_HPP_INCLUDED
+#define NOICE_COMMON_HPP_INCLUDED
+
 #include <pthread.h>
 
 #include <jack/jack.h>
@@ -42,3 +45,5 @@ struct JackData {
     JackData() noexcept;
     ~JackData();
 };
+
+#endif // NOICE_COMMON_HPP_INCLUDED
