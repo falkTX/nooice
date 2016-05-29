@@ -8,8 +8,4 @@ if [ ! -e "$DEVNAME" ]; then
 fi
 
 /usr/bin/jack_wait -w
-exec /usr/bin/noice "$DEVNAME"
-
-# /usr/bin/jack_load noice -i "$DEVNAME"
-# while [ -e "$DEVNAME" ]; do /usr/bin/sleep 1; done
-# /usr/bin/jack_unload noice
+/usr/bin/noice "$DEVNAME" &
