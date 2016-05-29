@@ -148,7 +148,7 @@ static bool noice_init(JackData* const jackdata, const char* const device)
         return false;
     }
 
-    const char* const deviceNum = device+(strlen(device)-1);
+    int deviceNum = atoi(device+(strlen(device)-1));
 
     if ((nr = read(jackdata->fd, buf, jackdata->joystick ? sizeof(js_event) : JackData::kBufSize)) < 0)
     {
@@ -171,6 +171,7 @@ static bool noice_init(JackData* const jackdata, const char* const device)
         // TODO - ask joystick to know what it is
         jackdata->device = JackData::kGuitarHero;
         jackdata->nr = 9;
+        deviceNum += 20;
     }
     else
     {
@@ -191,8 +192,7 @@ static bool noice_init(JackData* const jackdata, const char* const device)
     }
 
     char tmpName[32];
-    std::strcpy(tmpName, "noice");
-    std::strcat(tmpName, deviceNum);
+    std::snprintf(tmpName, 32, "noice%i", deviceNum);
 
     if (jackdata->client == nullptr)
     {
@@ -205,8 +205,7 @@ static bool noice_init(JackData* const jackdata, const char* const device)
         }
     }
 
-    std::strcpy(tmpName, "noice_capture_");
-    std::strcat(tmpName, deviceNum);
+    std::snprintf(tmpName, 32, "noice_capture_%i", deviceNum);
 
     jackdata->midiport = jack_port_register(jackdata->client, tmpName, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput|JackPortIsPhysical|JackPortIsTerminal, 0);
 
