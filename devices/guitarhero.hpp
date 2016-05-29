@@ -30,7 +30,7 @@ enum Bytes {
     kBytesButtons    = 8,
     // special bytes, used for internal data
     kBytesReservedInitiated  = 64,
-    kBytesReservedCurRoot    = 65,
+    kBytesReservedCurOctave  = 65,
     kBytesReservedNoteGreen  = 66,
     kBytesReservedNoteRed    = 67,
     kBytesReservedNoteBlue   = 68,
@@ -64,7 +64,7 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
     if (jackdata->oldbuf[kBytesReservedInitiated] == 0)
     {
         jackdata->oldbuf[kBytesReservedInitiated]  = 1;
-        jackdata->oldbuf[kBytesReservedCurRoot]    = 60;
+        jackdata->oldbuf[kBytesReservedCurOctave]  = 5;
         jackdata->oldbuf[kBytesReservedNoteGreen]  = 255;
         jackdata->oldbuf[kBytesReservedNoteRed]    = 255;
         jackdata->oldbuf[kBytesReservedNoteBlue]   = 255;
@@ -108,19 +108,19 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
         // note on
         if (tmpbuf[kBytesTriggerY] != 0x7F)
         {
-            const bool green  = tmpbuf[kBytesButtons] & kButtonMaskGreen;  // 0
-            const bool red    = tmpbuf[kBytesButtons] & kButtonMaskRed;    // 4
-            const bool yellow = tmpbuf[kBytesButtons] & kButtonMaskYellow; // 5
-            const bool blue   = tmpbuf[kBytesButtons] & kButtonMaskBlue;   // 7
-            const bool orange = tmpbuf[kBytesButtons] & kButtonMaskOrange; // 9
+            const bool green  = tmpbuf[kBytesButtons] & kButtonMaskGreen;  // 10
+            const bool red    = tmpbuf[kBytesButtons] & kButtonMaskRed;    // 1
+            const bool yellow = tmpbuf[kBytesButtons] & kButtonMaskYellow; // 7
+            const bool blue   = tmpbuf[kBytesButtons] & kButtonMaskBlue;   // 5
+            const bool orange = tmpbuf[kBytesButtons] & kButtonMaskOrange; // 2
 
             jack_nframes_t time = 0;
-            const unsigned char root = jackdata->oldbuf[kBytesReservedCurRoot];
+            const unsigned char root = jackdata->oldbuf[kBytesReservedCurOctave]*12;
 
             if (green)
             {
                 mididata[0] = 0x90;
-                mididata[1] = root+0;
+                mididata[1] = root+10;
                 mididata[2] = 100;
                 jack_midi_event_write(midibuf, time, mididata, 3);
                 time += 25;
@@ -129,7 +129,7 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
             if (red)
             {
                 mididata[0] = 0x90;
-                mididata[1] = root+4;
+                mididata[1] = root+1;
                 mididata[2] = 100;
                 jack_midi_event_write(midibuf, time, mididata, 3);
                 time += 25;
@@ -138,7 +138,7 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
             if (yellow)
             {
                 mididata[0] = 0x90;
-                mididata[1] = root+5;
+                mididata[1] = root+7;
                 mididata[2] = 100;
                 jack_midi_event_write(midibuf, time, mididata, 3);
                 time += 25;
@@ -147,7 +147,7 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
             if (blue)
             {
                 mididata[0] = 0x90;
-                mididata[1] = root+7;
+                mididata[1] = root+5;
                 mididata[2] = 100;
                 jack_midi_event_write(midibuf, time, mididata, 3);
                 time += 25;
@@ -156,7 +156,7 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
             if (orange)
             {
                 mididata[0] = 0x90;
-                mididata[1] = root+9;
+                mididata[1] = root+2;
                 mididata[2] = 100;
                 jack_midi_event_write(midibuf, time, mididata, 3);
                 time += 25;
@@ -233,15 +233,15 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
         switch (mask)
         {
         case kButtonMaskBack:
-            if (jackdata->oldbuf[kBytesReservedCurRoot] > 0)
-                jackdata->oldbuf[kBytesReservedCurRoot] -= 1;
+            if (jackdata->oldbuf[kBytesReservedCurOctave] > 0)
+                jackdata->oldbuf[kBytesReservedCurOctave] -= 1;
             break;
         case kButtonMaskStart:
-            if (jackdata->oldbuf[kBytesReservedCurRoot] < 127-9)
-                jackdata->oldbuf[kBytesReservedCurRoot] += 1;
+            if (jackdata->oldbuf[kBytesReservedCurOctave] < 10)
+                jackdata->oldbuf[kBytesReservedCurOctave] += 1;
             break;
         case kButtonMaskXbox:
-            jackdata->oldbuf[kBytesReservedCurRoot] = 60;
+            jackdata->oldbuf[kBytesReservedCurOctave] = 5;
             break;
         }
     }
