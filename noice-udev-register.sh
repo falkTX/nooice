@@ -7,5 +7,4 @@ if [ ! -e "$DEVNAME" ]; then
   exit 0
 fi
 
-/usr/bin/jack_wait -w
-/usr/bin/noice "$DEVNAME" &
+/usr/bin/systemctl start noice@"$DEVNAME"
