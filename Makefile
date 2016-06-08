@@ -27,9 +27,11 @@ install: build
 	install -m 755 nooice.so $(DESTDIR)$(JACK_LIBDIR)
 
 install-udev: build
+	install -d $(DESTDIR)/etc/systemd/system/
 	install -d $(DESTDIR)/etc/udev/rules.d
 	install -d $(DESTDIR)/usr/sbin
 
+	install -m 644 nooice@.service $(DESTDIR)/etc/systemd/system/
 	install -m 644 99-nooice.rules $(DESTDIR)/etc/udev/rules.d/
 	install -m 755 nooice-udev-register.sh $(DESTDIR)/usr/sbin/
 

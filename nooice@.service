@@ -1,0 +1,11 @@
+[Unit]
+Description=nooice on %I
+Requires=jack2.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/jack_wait -w
+ExecStart=-/usr/bin/nooice %I
+Restart=no
+User=root
+Group=root
