@@ -1,5 +1,5 @@
 /*
- * noice - ...
+ * nooice - ...
  * Copyright (C) 2016 Filipe Coelho <falktx@falktx.com>
  *
  * Permission to use, copy, modify, and/or distribute this software for any purpose with
@@ -14,8 +14,8 @@
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef NOICE_COMMON_HPP_INCLUDED
-#define NOICE_COMMON_HPP_INCLUDED
+#ifndef NOOICE_COMMON_HPP_INCLUDED
+#define NOOICE_COMMON_HPP_INCLUDED
 
 #include <pthread.h>
 
@@ -46,4 +46,4 @@ struct JackData {
     ~JackData();
 };
 
-#endif // NOICE_COMMON_HPP_INCLUDED
+#endif // NOOICE_COMMON_HPP_INCLUDED

@@ -1,5 +1,5 @@
 /*
- * noice - ...
+ * nooice - ...
  * Copyright (C) 2016 Filipe Coelho <falktx@falktx.com>
  *
  * Permission to use, copy, modify, and/or distribute this software for any purpose with
@@ -132,7 +132,7 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
 
 // --------------------------------------------------------------------------------------------------------------------
 
-static bool noice_init(JackData* const jackdata, const char* const device)
+static bool nooice_init(JackData* const jackdata, const char* const device)
 {
     if (device == nullptr || device[0] == '\0')
         return false;
@@ -144,7 +144,7 @@ static bool noice_init(JackData* const jackdata, const char* const device)
 
     if ((jackdata->fd = open(device, O_RDONLY)) < 0)
     {
-        fprintf(stderr, "noice::open(\"%s\") - failed to open hidraw device\n", device);
+        fprintf(stderr, "nooice::open(\"%s\") - failed to open hidraw device\n", device);
         return false;
     }
 
@@ -152,17 +152,17 @@ static bool noice_init(JackData* const jackdata, const char* const device)
 
     if ((nr = read(jackdata->fd, buf, jackdata->joystick ? sizeof(js_event) : JackData::kBufSize)) < 0)
     {
-        fprintf(stderr, "noice::read(%i) - failed to read from device\n", jackdata->fd);
+        fprintf(stderr, "nooice::read(%i) - failed to read from device\n", jackdata->fd);
         return false;
     }
 
-    printf("noice::read(%i) - nr = %d\n", jackdata->fd, nr);
+    printf("nooice::read(%i) - nr = %d\n", jackdata->fd, nr);
 
     if (jackdata->joystick)
     {
         if (nr != sizeof(js_event))
         {
-            fprintf(stderr, "noice::read(%i) - failed to read device (nr = %d)\n", jackdata->fd, nr);
+            fprintf(stderr, "nooice::read(%i) - failed to read device (nr = %d)\n", jackdata->fd, nr);
             return false;
         }
 
@@ -183,7 +183,7 @@ static bool noice_init(JackData* const jackdata, const char* const device)
             jackdata->device = JackData::kDualShock4;
             break;
         default:
-            fprintf(stderr, "noice::read(%i) - unsuppported device (nr = %d)\n", jackdata->fd, nr);
+            fprintf(stderr, "nooice::read(%i) - unsuppported device (nr = %d)\n", jackdata->fd, nr);
             return false;
         }
 
@@ -191,7 +191,7 @@ static bool noice_init(JackData* const jackdata, const char* const device)
     }
 
     char tmpName[32];
-    std::strcpy(tmpName, "noice");
+    std::strcpy(tmpName, "nooice");
     std::strcat(tmpName, deviceNum);
 
     if (jackdata->client == nullptr)
@@ -200,19 +200,19 @@ static bool noice_init(JackData* const jackdata, const char* const device)
 
         if (jackdata->client == nullptr)
         {
-            fprintf(stderr, "noice:: failed to register jack client\n");
+            fprintf(stderr, "nooice:: failed to register jack client\n");
             return false;
         }
     }
 
-    std::strcpy(tmpName, "noice_capture_");
+    std::strcpy(tmpName, "nooice_capture_");
     std::strcat(tmpName, deviceNum);
 
     jackdata->midiport = jack_port_register(jackdata->client, tmpName, JACK_DEFAULT_MIDI_TYPE, JackPortIsOutput|JackPortIsPhysical|JackPortIsTerminal, 0);
 
     if (jackdata->midiport == nullptr)
     {
-        fprintf(stderr, "noice:: failed to register jack midi port\n");
+        fprintf(stderr, "nooice:: failed to register jack midi port\n");
         return false;
     }
 
@@ -240,7 +240,7 @@ static bool noice_init(JackData* const jackdata, const char* const device)
     return true;
 }
 
-static bool noice_idle(JackData* const jackdata, unsigned char buf[JackData::kBufSize])
+static bool nooice_idle(JackData* const jackdata, unsigned char buf[JackData::kBufSize])
 {
     if (jackdata->client == nullptr)
         return false;
@@ -252,7 +252,7 @@ static bool noice_idle(JackData* const jackdata, unsigned char buf[JackData::kBu
 
         if (nr != sizeof(js_event))
         {
-            fprintf(stderr, "noice::read(%i, buf) - failed to read from device (nr: %d)\n", jackdata->nr, nr);
+            fprintf(stderr, "nooice::read(%i, buf) - failed to read from device (nr: %d)\n", jackdata->nr, nr);
             jack_deactivate(jackdata->client);
             return false;
         }
@@ -294,7 +294,7 @@ static bool noice_idle(JackData* const jackdata, unsigned char buf[JackData::kBu
 
         if (nr != jackdata->nr)
         {
-            fprintf(stderr, "noice::read(%i, buf) - failed to read from device (nr: %d)\n", jackdata->nr, nr);
+            fprintf(stderr, "nooice::read(%i, buf) - failed to read from device (nr: %d)\n", jackdata->nr, nr);
             jack_deactivate(jackdata->client);
             return false;
         }
@@ -337,7 +337,7 @@ int main(int argc, char **argv)
 
     JackData jackdata;
 
-    if (! noice_init(&jackdata, argv[1]))
+    if (! nooice_init(&jackdata, argv[1]))
         return 1;
 
     gRunning = true;
@@ -352,7 +352,7 @@ int main(int argc, char **argv)
 
     unsigned char buf[JackData::kBufSize];
     memset(buf, 0, JackData::kBufSize);
-    while (gRunning && noice_idle(&jackdata, buf)) {}
+    while (gRunning && nooice_idle(&jackdata, buf)) {}
 
     return 0;
 }
@@ -365,7 +365,7 @@ static void* gInternalClientRun(void* arg)
 
     unsigned char buf[JackData::kBufSize];
     memset(buf, 0, JackData::kBufSize);
-    while (noice_idle(jackdata, buf)) {}
+    while (nooice_idle(jackdata, buf)) {}
 
     return nullptr;
 }
@@ -378,7 +378,7 @@ int jack_initialize(jack_client_t* client, const char* load_init)
     JackData* const jackdata = new JackData();
 
     jackdata->client = client;
-    if (! noice_init(jackdata, load_init))
+    if (! nooice_init(jackdata, load_init))
         return 1;
 
     pthread_create(&jackdata->thread, nullptr, gInternalClientRun, jackdata);

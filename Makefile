@@ -11,27 +11,27 @@ JACK_LIBDIR = $(shell pkg-config --variable=libdir jack)/jack/
 
 all: build
 
-build: noice noice.so
+build: nooice nooice.so
 
-noice: main.cpp devices/*.hpp
+nooice: main.cpp devices/*.hpp
 	$(CXX) $< $(CXXFLAGS) $(LDFLAGS) -o $@
 
-noice.so: main.cpp devices/*.hpp
+nooice.so: main.cpp devices/*.hpp
 	$(CXX) $< $(CXXFLAGS) $(LDFLAGS) -fPIC -shared -Wl,--no-undefined -o $@
 
 install: build
 	install -d $(DESTDIR)/usr/bin
 	install -d $(DESTDIR)$(JACK_LIBDIR)
 
-	install -m 755 noice $(DESTDIR)/usr/bin/
-	install -m 755 noice.so $(DESTDIR)$(JACK_LIBDIR)
+	install -m 755 nooice $(DESTDIR)/usr/bin/
+	install -m 755 nooice.so $(DESTDIR)$(JACK_LIBDIR)
 
 install-udev: build
 	install -d $(DESTDIR)/etc/udev/rules.d
 	install -d $(DESTDIR)/usr/sbin
 
-	install -m 644 99-noice.rules $(DESTDIR)/etc/udev/rules.d/
-	install -m 755 noice-udev-register.sh $(DESTDIR)/usr/sbin/
+	install -m 644 99-nooice.rules $(DESTDIR)/etc/udev/rules.d/
+	install -m 755 nooice-udev-register.sh $(DESTDIR)/usr/sbin/
 
 clean:
-	rm -f noice noice.so
+	rm -f nooice nooice.so

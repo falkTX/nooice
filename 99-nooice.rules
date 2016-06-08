@@ -1,0 +1,3 @@
+KERNEL=="hidraw*", ATTRS{idVendor}=="054c", MODE="0666", RUN+="/usr/sbin/nooice-udev-register.sh"
+KERNEL=="js?", ATTRS{idVendor}=="1430", ATTRS{idProduct}=="4748", MODE="0666", RUN+="/usr/sbin/nooice-udev-register.sh"
+

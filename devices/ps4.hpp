@@ -1,5 +1,5 @@
 /*
- * noice - ...
+ * nooice - ...
  * Copyright (C) 2016 Filipe Coelho <falktx@falktx.com>
  *
  * Permission to use, copy, modify, and/or distribute this software for any purpose with
