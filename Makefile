@@ -13,10 +13,10 @@ all: build
 
 build: nooice nooice.so
 
-nooice: main.cpp devices/*.hpp
+nooice: nooice.cpp devices/*.hpp
 	$(CXX) $< $(CXXFLAGS) $(LDFLAGS) -o $@
 
-nooice.so: main.cpp devices/*.hpp
+nooice.so: nooice.cpp devices/*.hpp
 	$(CXX) $< $(CXXFLAGS) $(LDFLAGS) -fPIC -shared -Wl,--no-undefined -o $@
 
 install: build
@@ -29,11 +29,9 @@ install: build
 install-udev: build
 	install -d $(DESTDIR)/etc/systemd/system/
 	install -d $(DESTDIR)/etc/udev/rules.d
-	install -d $(DESTDIR)/usr/sbin
 
-	install -m 644 nooice@.service $(DESTDIR)/etc/systemd/system/
-	install -m 644 99-nooice.rules $(DESTDIR)/etc/udev/rules.d/
-	install -m 755 nooice-udev-register.sh $(DESTDIR)/usr/sbin/
+	install -m 644 systemd/nooice@.service $(DESTDIR)/etc/systemd/system/
+	install -m 644 systemd/99-nooice.rules $(DESTDIR)/etc/udev/rules.d/
 
 clean:
 	rm -f nooice nooice.so

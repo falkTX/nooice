@@ -23,9 +23,9 @@
 
 // --------------------------------------------------------------------------------------------------------------------
 
-#include "devices/guitarhero.hpp"
-#include "devices/ps3.hpp"
-#include "devices/ps4.hpp"
+#include "devices/guitarhero.cpp"
+#include "devices/ps3.cpp"
+#include "devices/ps4.cpp"
 
 // --------------------------------------------------------------------------------------------------------------------
 
