@@ -2,10 +2,10 @@
 CC  ?= gcc
 CXX ?= g++
 
-_FLAGS    = -Wall -O2
-CFLAGS   += $(_FLAGS) $(shell pkg-config --cflags jack) -std=c99
-CXXFLAGS += $(_FLAGS) $(shell pkg-config --libs jack) -std=c++11
-LDFLAGS  += -lpthread
+_FLAGS    = -Wall -O2 $(shell pkg-config --cflags jack)
+CFLAGS   += $(_FLAGS) -std=c99
+CXXFLAGS += $(_FLAGS) -std=c++11
+LDFLAGS  += $(shell pkg-config --libs jack) -lpthread
 
 JACK_LIBDIR = $(shell pkg-config --variable=libdir jack)/jack/
 
