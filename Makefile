@@ -27,9 +27,11 @@ install: build
 	install -m 755 nooice.so $(DESTDIR)$(JACK_LIBDIR)
 
 install-systemd: build
-	install -d $(DESTDIR)/etc/systemd/system/
+	install -d $(DESTDIR)/usr/bin
+	install -d $(DESTDIR)/etc/systemd/system
 	install -d $(DESTDIR)/etc/udev/rules.d
 
+	install -m 755 systemd/nooice-systemd-start.sh $(DESTDIR)/usr/bin/
 	install -m 644 systemd/nooice@.service $(DESTDIR)/etc/systemd/system/
 	install -m 644 systemd/99-nooice.rules $(DESTDIR)/etc/udev/rules.d/
 
