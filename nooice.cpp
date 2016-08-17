@@ -366,6 +366,26 @@ static void* gInternalClientRun(void* arg)
     memset(buf, 0, JackData::kBufSize);
     while (nooice_idle(jackdata, buf)) {}
 
+    if (jackdata->client != nullptr)
+    {
+        jack_client_t* const client = jackdata->client;
+        const char* const client_name = jack_get_client_name(client);
+
+        jack_deactivate(client);
+        jackdata->client = nullptr;
+
+        /*
+         * Unload this client.
+         * Note that calling jack_internal_client_unload from inside the internal client itself produces a jack crash.
+         * So we open a new process and do the unloading from there. */
+
+        if (vfork() == 0)
+        {
+            execl("/usr/bin/jack_unload", "/usr/bin/jack_unload", client_name, nullptr);
+            _exit(0);
+        }
+    }
+
     return nullptr;
 }
 
