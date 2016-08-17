@@ -6,7 +6,7 @@ Requires=jack2.service
 Type=simple
 Environment=JACK_INTERNAL_CLIENT_SYNC=.mod-host
 ExecStartPre=/usr/bin/jack_wait -w
-ExecStart=-/usr/bin/nooice %I
+ExecStart=-/usr/bin/jack_load -a -w -i %I nooice
 Restart=no
 User=root
 Group=root
