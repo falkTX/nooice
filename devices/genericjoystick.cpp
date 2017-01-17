@@ -73,8 +73,6 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
             if (tmpbuf[i] == jackdata->oldbuf[i])
                 continue;
 
-            printf("data for %i differs\n", i);
-
             // 8 byte masks
             for (unsigned j=0; j<8; ++j)
             {
