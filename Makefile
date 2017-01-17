@@ -18,10 +18,10 @@ all: build
 
 build: nooice nooice.so
 
-nooice: nooice.cpp devices/*.hpp
+nooice: nooice.cpp devices/*.cpp devices/*.hpp
 	$(CXX) $< $(CXXFLAGS) $(LDFLAGS) -o $@
 
-nooice.so: nooice.cpp devices/*.hpp
+nooice.so: nooice.cpp devices/*.cpp devices/*.hpp
 	$(CXX) $< $(CXXFLAGS) $(LDFLAGS) -fPIC -shared -Wl,--no-undefined -o $@
 
 install: build

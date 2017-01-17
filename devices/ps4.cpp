@@ -132,22 +132,10 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
                     continue;
 
                 // note
+                mididata[0] = newbyte ? 0x90 : 0x80;
                 mididata[1] = 50 + (i+1)*2;
-
-                // note on
-                if (newbyte)
-                {
-                    mididata[0] = 0x90;
-                    mididata[2] = 100;
-                    jack_midi_event_write(midibuf, 0, mididata, 3);
-                }
-                // note off
-                else
-                {
-                    mididata[0] = 0x80;
-                    mididata[2] = 100;
-                    jack_midi_event_write(midibuf, 0, mididata, 3);
-                }
+                mididata[2] = 100;
+                jack_midi_event_write(midibuf, 0, mididata, 3);
             }
 
             jackdata->oldbuf[kBytesButtons1] = tmpbuf[kBytesButtons1];
@@ -165,22 +153,10 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
                     continue;
 
                 // note
+                mididata[0] = newbyte ? 0x90 : 0x80;
                 mididata[1] = 62 + (i+1)*2;
-
-                // note on
-                if (newbyte)
-                {
-                    mididata[0] = 0x90;
-                    mididata[2] = 100;
-                    jack_midi_event_write(midibuf, 0, mididata, 3);
-                }
-                // note off
-                else
-                {
-                    mididata[0] = 0x80;
-                    mididata[2] = 100;
-                    jack_midi_event_write(midibuf, 0, mididata, 3);
-                }
+                mididata[2] = 100;
+                jack_midi_event_write(midibuf, 0, mididata, 3);
             }
 
             jackdata->oldbuf[kBytesButtons2] = tmpbuf[kBytesButtons2];

@@ -1,6 +1,6 @@
 /*
  * nooice - ...
- * Copyright (C) 2016 Filipe Coelho <falktx@falktx.com>
+ * Copyright (C) 2016-2017 Filipe Coelho <falktx@falktx.com>
  *
  * Permission to use, copy, modify, and/or distribute this software for any purpose with
  * or without fee is hereby granted, provided that the above copyright notice and this
@@ -20,9 +20,17 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
+#include <linux/joystick.h>
+
+#ifdef HAVE_UDEV
+#include <libudev.h>
+#include <sstream>
+#endif
 
 // --------------------------------------------------------------------------------------------------------------------
 
+#include "devices/genericjoystick.cpp"
 #include "devices/guitarhero.cpp"
 #include "devices/ps3.cpp"
 #include "devices/ps4.cpp"
@@ -30,26 +38,21 @@
 // --------------------------------------------------------------------------------------------------------------------
 
 static const int kJoystickAnalogStart = 0;
-static const int kJoystickAnalogEnd   = 7;
-static const int kJoystickButtonStart = 8;
+static const int kJoystickAnalogEnd   = 16;
+static const int kJoystickButtonStart = 17;
 static const int kJoystickButtonEnd   = 63;
 static const int kJoystickMaxAnalog   = kJoystickAnalogEnd-kJoystickAnalogStart;
 static const int kJoystickMaxButton   = kJoystickButtonEnd-kJoystickButtonStart;
 
 // --------------------------------------------------------------------------------------------------------------------
 
-struct js_event {
-    unsigned int time;      /* event timestamp in milliseconds */
-    short value;            /* value */
-    unsigned char type;     /* event type */
-    unsigned char number;   /* axis/button number */
-};
-
 JackData::JackData() noexcept
     : joystick(false),
       device(kNull),
       fd(-1),
-      nr(-1),
+      nread(-1),
+      nbuttons(0),
+      naxes(0),
       thread(0),
       client(nullptr),
       midiport(nullptr)
@@ -71,6 +74,46 @@ JackData::~JackData()
         close(fd);
 
     pthread_mutex_destroy(&mutex);
+}
+
+// --------------------------------------------------------------------------------------------------------------------
+// Use udev to look up the product and manufacturer IDs
+
+static bool getVendorProductID(const char* const sysname, int* const vendorID, int* const productID)
+{
+    struct udev* const udev = udev_new();
+
+    if (udev == nullptr)
+    {
+        fprintf(stderr, "nooice::open(\"%s\") - failed to use udev\n", sysname);
+        return false;
+    }
+
+    struct udev_device* dev = udev_device_new_from_subsystem_sysname(udev, "input", sysname);
+    dev = udev_device_get_parent_with_subsystem_devtype(dev, "usb", "usb_device");
+
+    if (dev == nullptr)
+    {
+        fprintf(stderr, "nooice::open(\"%s\") - failed to find parent USB device for VendorID/ProductID identification\n", sysname);
+        return false;
+    }
+
+    {
+        std::stringstream ss;
+        ss << std::hex << udev_device_get_sysattr_value(dev, "idVendor");
+        *vendorID = std::strtol(ss.str().c_str(), nullptr, 16);
+    }
+
+    {
+        std::stringstream ss;
+        ss << std::hex << udev_device_get_sysattr_value(dev, "idProduct");
+        *productID = std::strtol(ss.str().c_str(), nullptr, 16);
+    }
+
+    udev_device_unref(dev);
+    udev_unref(udev);
+
+    return true;
 }
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -107,7 +150,7 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
     }
 
     // copy buf data into a temp location so we can release the lock
-    std::memcpy(tmpbuf, jackdata->buf, jackdata->nr);
+    std::memcpy(tmpbuf, jackdata->buf, jackdata->nread);
     pthread_mutex_unlock(&jackdata->mutex);
 
     switch (jackdata->device)
@@ -123,10 +166,13 @@ static int process_callback(const jack_nframes_t frames, void* const arg)
     case JackData::kGuitarHero:
         GuitarHero::process(jackdata, midibuf, tmpbuf);
         break;
+    case JackData::kGenericJoystick:
+        GenericJoystick::process(jackdata, midibuf, tmpbuf);
+        break;
     }
 
     // cache current buf for comparison on next call
-    std::memcpy(jackdata->oldbuf, tmpbuf, jackdata->nr);
+    std::memcpy(jackdata->oldbuf, tmpbuf, jackdata->nread);
     return 0;
 }
 
@@ -137,7 +183,7 @@ static bool nooice_init(JackData* const jackdata, const char* const device)
     if (device == nullptr || device[0] == '\0')
         return false;
 
-    int nr;
+    int nread;
     unsigned char buf[JackData::kBufSize];
 
     jackdata->joystick = strncmp(device, "/dev/input/js", 13) == 0;
@@ -150,32 +196,60 @@ static bool nooice_init(JackData* const jackdata, const char* const device)
 
     int deviceNum = atoi(device+(strlen(device)-1));
 
-    if ((nr = read(jackdata->fd, buf, jackdata->joystick ? sizeof(js_event) : JackData::kBufSize)) < 0)
+    if ((nread = read(jackdata->fd, buf, jackdata->joystick ? sizeof(js_event) : JackData::kBufSize)) < 0)
     {
         fprintf(stderr, "nooice::read(%i) - failed to read from device\n", jackdata->fd);
         return false;
     }
 
-    printf("nooice::read(%i) - nr = %d\n", jackdata->fd, nr);
+    printf("nooice::read(%i) - nread = %u\n", jackdata->fd, nread);
 
     if (jackdata->joystick)
     {
-        if (nr != sizeof(js_event))
+        if (nread != sizeof(js_event))
         {
-            fprintf(stderr, "nooice::read(%i) - failed to read device (nr = %d)\n", jackdata->fd, nr);
+            fprintf(stderr, "nooice::read(%i) - failed to read device (nread = %u)\n", jackdata->fd, nread);
             return false;
         }
 
         memset(buf, 0, JackData::kBufSize);
 
-        // TODO - ask joystick to know what it is
-        jackdata->device = JackData::kGuitarHero;
-        jackdata->nr = 9;
+        // Ask joystick to know what it is
+        int vendorID=0, productID=0;
+
+#ifdef HAVE_UDEV
+        if (! getVendorProductID(basename(device), &vendorID, &productID))
+        {
+            fprintf(stderr, "nooice::read(%i) - failed to identify device (nread = %u)\n", jackdata->fd, nread);
+        }
+#endif
+
+        if (vendorID == 1430 && productID == 4748)
+        {
+            jackdata->device = JackData::kGuitarHero;
+            jackdata->nread = 9;
+        }
+        else
+        {
+            jackdata->device = JackData::kGenericJoystick;
+
+            int n;
+            if (ioctl(jackdata->fd, JSIOCGAXES, &n) >= 0 && n > 0)
+                jackdata->naxes = (n > kJoystickMaxAnalog) ? kJoystickMaxAnalog : n;
+
+            if (ioctl(jackdata->fd, JSIOCGBUTTONS, &n) >= 0 && n > 0)
+                jackdata->nbuttons = (n > kJoystickMaxButton) ? kJoystickMaxButton : n;
+
+            jackdata->nread = jackdata->naxes + jackdata->nbuttons/8;
+
+            printf("nooice::read(%i) - joystick has %u axes and %u buttons\n", jackdata->fd, jackdata->naxes, jackdata->nbuttons);
+        }
+
         deviceNum += 20;
     }
     else
     {
-        switch (nr)
+        switch (nread)
         {
         case 49:
             jackdata->device = JackData::kDualShock3;
@@ -184,11 +258,11 @@ static bool nooice_init(JackData* const jackdata, const char* const device)
             jackdata->device = JackData::kDualShock4;
             break;
         default:
-            fprintf(stderr, "nooice::read(%i) - unsuppported device (nr = %d)\n", jackdata->fd, nr);
+            fprintf(stderr, "nooice::read(%i) - unsuppported device (nread = %u)\n", jackdata->fd, nread);
             return false;
         }
 
-        jackdata->nr = nr;
+        jackdata->nread = nread;
     }
 
     char tmpName[32];
@@ -228,9 +302,15 @@ static bool nooice_init(JackData* const jackdata, const char* const device)
     case JackData::kGuitarHero:
         jack_port_set_alias(jackdata->midiport, "Guitar Hero");
         break;
+    case JackData::kGenericJoystick: {
+        char name[128];
+        if (ioctl(jackdata->fd, JSIOCGNAME(sizeof(name)), name) < 0)
+            strncpy(name, "Generic Joystick", sizeof(name));
+        jack_port_set_alias(jackdata->midiport, name);
+    }   break;
     }
 
-    std::memcpy(jackdata->buf, buf, jackdata->nr);
+    std::memcpy(jackdata->buf, buf, jackdata->nread);
 
     jack_on_shutdown(jackdata->client, shutdown_callback, jackdata);
     jack_set_process_callback(jackdata->client, process_callback, jackdata);
@@ -247,11 +327,12 @@ static bool nooice_idle(JackData* const jackdata, unsigned char buf[JackData::kB
     if (jackdata->joystick)
     {
         js_event ev;
-        const int nr = read(jackdata->fd, &ev, sizeof(js_event));
+        const int nread = read(jackdata->fd, &ev, sizeof(js_event));
 
-        if (nr != sizeof(js_event))
+        if (nread != sizeof(js_event))
         {
-            fprintf(stderr, "nooice::read(%i, buf) - failed to read from device (nr: %d)\n", jackdata->nr, nr);
+            if (jackdata->fd >= 0)
+                fprintf(stderr, "nooice::read(%i, buf) - failed to read from device (nr: %d)\n", jackdata->nread, nread);
             jack_deactivate(jackdata->client);
             return false;
         }
@@ -268,8 +349,8 @@ static bool nooice_idle(JackData* const jackdata, unsigned char buf[JackData::kB
             if (jackdata->device == JackData::kGuitarHero && ev.number > 5)
                 --ev.number;
 
-            const int mask = 1 << ev.number;
-            const int offs = kJoystickButtonStart + (ev.number / 8);
+            const int mask = 1 << (ev.number % 8);
+            const int offs = (jackdata->naxes > 0) ? jackdata->naxes : kJoystickButtonStart + (ev.number / 8);
 
             if (ev.value)
                 buf[offs] |= mask;
@@ -289,23 +370,23 @@ static bool nooice_idle(JackData* const jackdata, unsigned char buf[JackData::kB
     }
     else
     {
-        const int nr = read(jackdata->fd, buf, jackdata->nr);
+        const int nread = read(jackdata->fd, buf, jackdata->nread);
 
-        if (nr != jackdata->nr)
+        if (nread != static_cast<int>(jackdata->nread))
         {
-            fprintf(stderr, "nooice::read(%i, buf) - failed to read from device (nr: %d)\n", jackdata->nr, nr);
+            fprintf(stderr, "nooice::read(%i, buf) - failed to read from device (nread: %d)\n", jackdata->nread, nread);
             jack_deactivate(jackdata->client);
             return false;
         }
     }
 
     pthread_mutex_lock(&jackdata->mutex);
-    std::memcpy(jackdata->buf, buf, jackdata->nr);
+    std::memcpy(jackdata->buf, buf, jackdata->nread);
     pthread_mutex_unlock(&jackdata->mutex);
 
 #if 0
         printf("\n==========================================\n");
-        for (int j=0; j<jackdata->nr; j++)
+        for (int j=0; j<jackdata->nread; j++)
         {
             printf("%02X ", buf[j]);
 
@@ -320,10 +401,15 @@ static bool nooice_idle(JackData* const jackdata, unsigned char buf[JackData::kB
 // --------------------------------------------------------------------------------------------------------------------
 
 static volatile bool gRunning;
+static JackData* gJackdata;
 
 static void signalHandler(int)
 {
     gRunning = false;
+
+    const int fd = gJackdata->fd;
+    gJackdata->fd = -1;
+    close(fd);
 }
 
 int main(int argc, char **argv)
@@ -335,6 +421,7 @@ int main(int argc, char **argv)
     }
 
     JackData jackdata;
+    gJackdata = &jackdata;
 
     if (! nooice_init(&jackdata, argv[1]))
         return 1;

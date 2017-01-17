@@ -1,6 +1,6 @@
 /*
  * nooice - ...
- * Copyright (C) 2016 Filipe Coelho <falktx@falktx.com>
+ * Copyright (C) 2016-2017 Filipe Coelho <falktx@falktx.com>
  *
  * Permission to use, copy, modify, and/or distribute this software for any purpose with
  * or without fee is hereby granted, provided that the above copyright notice and this
@@ -30,11 +30,13 @@ struct JackData {
         kDualShock3,
         kDualShock4,
         kGuitarHero,
+        kGenericJoystick,
     };
 
     bool joystick;
     Device device;
-    int fd, nr;
+    int fd;
+    unsigned nread, nbuttons, naxes;
     pthread_t thread;
     pthread_mutex_t mutex;
     jack_client_t* client;
