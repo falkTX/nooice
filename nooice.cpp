@@ -374,7 +374,8 @@ static bool nooice_idle(JackData* const jackdata, unsigned char buf[JackData::kB
 
         if (nread != static_cast<int>(jackdata->nread))
         {
-            fprintf(stderr, "nooice::read(%i, buf) - failed to read from device (nread: %d)\n", jackdata->nread, nread);
+            if (jackdata->fd >= 0)
+                fprintf(stderr, "nooice::read(%i, buf) - failed to read from device (nread: %d)\n", jackdata->nread, nread);
             jack_deactivate(jackdata->client);
             return false;
         }
