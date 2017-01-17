@@ -7,6 +7,11 @@ CFLAGS   += $(_FLAGS) -std=c99
 CXXFLAGS += $(_FLAGS) -std=c++11
 LDFLAGS  += $(shell pkg-config --libs jack) -lpthread
 
+ifeq ($(shell pkg-config --exists libudev && echo true),true)
+_FLAGS  += $(shell pkg-config --cflags libudev) -DHAVE_UDEV
+LDFLAGS += $(shell pkg-config --libs libudev)
+endif
+
 JACK_LIBDIR = $(shell pkg-config --variable=libdir jack)/jack/
 
 all: build
