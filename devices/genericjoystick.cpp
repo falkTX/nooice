@@ -85,7 +85,7 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
 
                 // note
                 mididata[0] = newbyte ? 0x90 : 0x80;
-                mididata[1] = 62 + i*8 + j;
+                mididata[1] = 60 + (i-jackdata->naxes)*8 + j;
                 mididata[2] = 100;
                 jack_midi_event_write(midibuf, 0, mididata, 3);
             }
