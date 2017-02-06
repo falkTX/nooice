@@ -234,9 +234,12 @@ static bool nooice_init(JackData* const jackdata, const char* const device)
             jackdata->device = JackData::kGenericJoystick;
 
             int n;
+
+            n = 0;
             if (ioctl(jackdata->fd, JSIOCGAXES, &n) >= 0 && n > 0)
                 jackdata->naxes = (n > kJoystickMaxAnalog) ? kJoystickMaxAnalog : n;
 
+            n = 0;
             if (ioctl(jackdata->fd, JSIOCGBUTTONS, &n) >= 0 && n > 0)
                 jackdata->nbuttons = (n > kJoystickMaxButton) ? kJoystickMaxButton : n;
 
