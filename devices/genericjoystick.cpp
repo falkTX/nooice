@@ -66,7 +66,7 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
 
         // send notes
         unsigned char newbyte, oldbyte;
-        int mask;
+        int mask, k;
 
         for (; i<jackdata->nread; ++i)
         {
@@ -83,11 +83,23 @@ void process(JackData* const jackdata, void* const midibuf, unsigned char tmpbuf
                 if (newbyte == oldbyte)
                     continue;
 
+                k = (i-jackdata->naxes)*8 + j;
+
                 // note
                 mididata[0] = newbyte ? 0x90 : 0x80;
-                mididata[1] = 60 + (i-jackdata->naxes)*8 + j;
+                mididata[1] = 60 + k;
                 mididata[2] = 100;
                 jack_midi_event_write(midibuf, 0, mididata, 3);
+
+                // 90+30 = 120, so avoid going over that
+                if (k < 30)
+                {
+                    // CC
+                    mididata[0] = 0xB0;
+                    mididata[1] = 90 + k;
+                    mididata[2] = newbyte ? 127 : 0;
+                    jack_midi_event_write(midibuf, 0, mididata, 3);
+                }
             }
 
             jackdata->oldbuf[i] = tmpbuf[i];
