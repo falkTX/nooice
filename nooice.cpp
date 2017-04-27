@@ -76,6 +76,7 @@ JackData::~JackData()
     pthread_mutex_destroy(&mutex);
 }
 
+#ifdef HAVE_UDEV
 // --------------------------------------------------------------------------------------------------------------------
 // Use udev to look up the product and manufacturer IDs
 
@@ -115,6 +116,7 @@ static bool getVendorProductID(const char* const sysname, int* const vendorID, i
 
     return true;
 }
+#endif
 
 // --------------------------------------------------------------------------------------------------------------------
 
